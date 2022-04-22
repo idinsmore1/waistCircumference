@@ -46,7 +46,6 @@ def main():
     df.to_csv(f'{args.output}/{description}.csv')
     # Select the waist measurement from the CSV file
     max_ix, waist_range = get_waist_range(df)
-    print(max_ix, waist_range)
     waist_center, waist_ix, = select_waist_measurement(df, max_ix, waist_range)
     # Store the data around the waist to calculate the mean and standard deviation
     five_measure = df.loc[(waist_ix - 2):(waist_ix + 2), 'waist_circumference_cm']
