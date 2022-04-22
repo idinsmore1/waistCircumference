@@ -97,7 +97,11 @@ def get_waist_range(waist_df):
         print('No waist found')
         return None
     else:
-        max_ix = max(incr_ranges, key=incr_ranges.get)
+        try:
+            max_ix = max(incr_ranges, key=incr_ranges.get)
+        except Error:
+            print('No waist found')
+            return None, None
         waist_range = incr_ranges[max_ix]
         return max_ix, waist_range
 

@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import os
+from matplotlib.pyplot import imshow, imsave
 from dicomseries import DicomSeries
 from utilities import (
     binarize_scan,
@@ -28,7 +29,11 @@ def main():
     dicom_series = DicomSeries(args.input)
     # Read the DicomSeries object at an HU where bone is easily visible
     ct_scan = dicom_series.read_dicom_series('*', 0, 500)
-    if ct_scan.shape[2] < 10:
+    try:
+        if ct_scan.shape[2] < 10 or dicom_series.series_info['ct_direction'] != 'AX':
+            print('Invalid CT Scan')
+            return
+    except KeyError:
         print('Invalid CT Scan')
         return
     # Create the output directory if it does not exist
@@ -53,11 +58,14 @@ def main():
     # Select the waist measurement from the CSV file
     max_ix, waist_range = get_waist_range(df)
     waist_center, waist_ix, = select_waist_measurement(df, max_ix, waist_range)
+    if waist_ix is None:
+        print('No waist measurement found')
+        return
     # Store the data around the waist to calculate the mean and standard deviation
     five_measure = df.loc[(waist_ix - 2):(waist_ix + 2), 'waist_circumference_cm']
     fifteen_measure = df.loc[(waist_ix - 8):(waist_ix + 8), 'waist_circumference_cm']
     important_vals = [
-        dicom_series.mrn,
+        str(dicom_series.mrn),
         dicom_series.series_info['scan_date'],
         waist_ix,
         waist_center,
@@ -67,6 +75,8 @@ def main():
         np.round(fifteen_measure.std(), 3)
     ]
     # Write the important values to a CSV file
+    fig = imshow(ct_scan[:, :, waist_ix])
+    imsave(f'{args.output}/{description}.png', fig.get_array())
     pd.DataFrame([important_vals],
                  columns=['MRN', 'ScanDate', 'WaistIndex', 'WaistCenter', '5-Mean', '5-Std', '15-Mean',
                           '15-Std']).to_csv(f'{args.output}/{description}_measurement.csv', index=False)
