@@ -26,12 +26,17 @@ args = parser.parse_args()
 def main():
     # Create a DicomSeries object
     dicom_series = DicomSeries(args.input)
+    # Read the DicomSeries object at an HU where bone is easily visible
+    ct_scan = dicom_series.read_dicom_series('*', 0, 500)
+    if ct_scan.shape[2] < 10:
+        print('Invalid CT Scan')
+        return
+    # Create the output directory if it does not exist
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     # Make the base name of the output file
     description = f'MRN{dicom_series.mrn}_ACC{dicom_series.acc}_{dicom_series.cut}_waist_circumferences'
-    # Read the DicomSeries object at an HU where bone is easily visible
-    ct_scan = dicom_series.read_dicom_series('*', 0, 500)
+    # Create dictionary to store the results
     waist_circumferences = {}
     # For each cut, binarize the image, fill the gaps, measure the circumference, and get number of bones
     for image in range(ct_scan.shape[2]):
