@@ -1,6 +1,7 @@
 import argparse
 
 import pandas as pd
+import numpy as np
 import os
 from dicomseries import DicomSeries
 from utilities import (
@@ -55,10 +56,10 @@ def main():
         dicom_series.series_info['scan_date'],
         waist_ix,
         waist_center,
-        five_measure.mean(),
-        five_measure.std(),
-        fifteen_measure.mean(),
-        fifteen_measure.std()
+        np.round(five_measure.mean(), 2),
+        np.round(five_measure.std(), 3),
+        np.round(fifteen_measure.mean(), 2),
+        np.round(fifteen_measure.std(), 3)
     ]
     # Write the important values to a CSV file
     pd.DataFrame([important_vals],
