@@ -36,9 +36,10 @@ def main():
     except KeyError:
         print('Invalid CT Scan')
         return
+    outdir = f'{args.output}/{dicom_series.mrn}'
     # Create the output directory if it does not exist
-    if not os.path.exists(args.output):
-        os.makedirs(args.output)
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
     # Make the base name of the output file
     description = f'MRN{dicom_series.mrn}_ACC{dicom_series.acc}_{dicom_series.cut}_waist_circumferences'
     # Create dictionary to store the results
@@ -54,7 +55,7 @@ def main():
         waist_circumferences[image] = {'waist_circumference_cm': measurement, 'n_bones': n_bones}
     # Write the results to a CSV file
     df = pd.DataFrame(waist_circumferences).T
-    df.to_csv(f'{args.output}/{description}.csv')
+    df.to_csv(f'{outdir}/{description}.csv')
     # Select the waist measurement from the CSV file
     max_ix, waist_range = get_waist_range(df)
     waist_center, waist_ix, = select_waist_measurement(df, max_ix, waist_range)
@@ -76,10 +77,10 @@ def main():
     ]
     # Write the important values to a CSV file
     fig = imshow(ct_scan[:, :, waist_ix])
-    imsave(f'{args.output}/{description}.png', fig.get_array())
+    imsave(f'{outdir}/{description}.png', fig.get_array())
     pd.DataFrame([important_vals],
                  columns=['MRN', 'ScanDate', 'WaistIndex', 'WaistCenter', '5-Mean', '5-Std', '15-Mean',
-                          '15-Std']).to_csv(f'{args.output}/{description}_measurement.csv', index=False)
+                          '15-Std']).to_csv(f'{outdir}/{description}_measurement.csv', index=False)
 
 
 if __name__ == '__main__':
