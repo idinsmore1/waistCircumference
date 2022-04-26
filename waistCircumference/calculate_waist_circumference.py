@@ -63,18 +63,34 @@ def main():
         print('No waist measurement found')
         return
     # Store the data around the waist to calculate the mean and standard deviation
-    five_measure = df.loc[(waist_ix - 2):(waist_ix + 2), 'waist_circumference_cm']
-    fifteen_measure = df.loc[(waist_ix - 8):(waist_ix + 8), 'waist_circumference_cm']
+    try:
+        five_measure = df.loc[(waist_ix - 2):(waist_ix + 2), 'waist_circumference_cm']
+    except Exception:
+        print('5 index out of range for comparison')
+        five_measure = None
+    try:
+        fifteen_measure = df.loc[(waist_ix - 8):(waist_ix + 8), 'waist_circumference_cm']
+    except Exception:
+        print('15 index out of range for comparison')
+        fifteen_measure = None
     important_vals = [
         str(dicom_series.mrn),
         dicom_series.series_info['scan_date'],
         waist_ix,
-        waist_center,
-        np.round(five_measure.mean(), 2),
-        np.round(five_measure.std(), 3),
-        np.round(fifteen_measure.mean(), 2),
-        np.round(fifteen_measure.std(), 3)
+        waist_center
     ]
+    if five_measure is not None:
+        important_vals.append(five_measure.mean())
+        important_vals.append(five_measure.std())
+    else:
+        important_vals.append(None)
+        important_vals.append(None)
+    if fifteen_measure is not None:
+        important_vals.append(fifteen_measure.mean())
+        important_vals.append(fifteen_measure.std())
+    else:
+        important_vals.append(None)
+        important_vals.append(None)
     # Write the important values to a CSV file
     fig = imshow(ct_scan[:, :, waist_ix])
     imsave(f'{outdir}/{description}.png', fig.get_array())
