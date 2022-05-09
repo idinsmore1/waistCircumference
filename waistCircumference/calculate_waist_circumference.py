@@ -6,7 +6,7 @@ import os
 from matplotlib.pyplot import imshow, imsave
 from dicomseries import DicomSeries
 from utilities import (
-    binarize_scan,
+    get_binary_body,
     fill_binary_gaps,
     mark_body,
     measure_circumference,
@@ -47,11 +47,11 @@ def main():
     # For each cut, binarize the image, fill the gaps, measure the circumference, and get number of bones
     for image in range(ct_scan.shape[2]):
         image_slc = ct_scan[:, :, image]
-        binary_im = binarize_scan(image_slc)
+        binary_im = get_binary_body(image_slc)
         binary_im = fill_binary_gaps(binary_im)
         body_array = mark_body(binary_im)
         measurement = measure_circumference(body_array, dicom_series.series_info['width'])
-        n_bones = detect_number_of_bones(image_slc, upper_bound=250, area_threshold=int(args.threshold))
+        n_bones = detect_number_of_bones(image_slc, upper_bound=225, area_threshold=int(args.threshold))
         waist_circumferences[image] = {'waist_circumference_cm': measurement, 'n_bones': n_bones}
     # Write the results to a CSV file
     df = pd.DataFrame(waist_circumferences).T
