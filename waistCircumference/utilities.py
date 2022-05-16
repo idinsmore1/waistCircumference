@@ -40,14 +40,14 @@ def imshow(*args, **kwargs):
 
 
 # General utilities for both bone segmentation and waist measurement
-@njit()
+@njit
 def get_binary_body(pixel_array: np.ndarray) -> np.ndarray:
     """
     Binarize a CT scan between air and body
     :param pixel_array: dicom pixel array
     :return: binary image as numpy array
     """
-    binary_im = pixel_array > np.min(pixel_array) + 50
+    binary_im = pixel_array > np.min(pixel_array)
     binary_im = binary_im.astype(np.uint8)
     return binary_im
 
@@ -78,6 +78,7 @@ def get_largest_connected_component(binary_image: np.ndarray) -> np.ndarray:
     return labels_max
 
 
+# @njit
 def remove_exterior_artifacts(ct_image: np.ndarray, largest_connected_component: np.ndarray) -> np.ndarray:
     """
     A function to remove artifacts outside the body from CT scans
@@ -89,6 +90,7 @@ def remove_exterior_artifacts(ct_image: np.ndarray, largest_connected_component:
     return ct_image
 
 
+# @njit
 def threshold_image(ct_image: np.ndarray, lower_bound: np.ndarray = 175) -> np.ndarray:
     """
     A function to threshold an image for bone segmentation
@@ -113,12 +115,19 @@ def fill_bone_gaps(threshold_im: np.ndarray) -> np.ndarray:
     filled = filled - 1
     return filled
 
-def threshold_segmentation(raw_ct_image: np.ndarray) -> np.ndarray:
-    """Function to perform raw threshold segmentation, to move into adaptive segmentation
-    :param raw_ct_image: the raw ct image
+
+def threshold_segment_ct_image(ct_image: np.ndarray) -> np.ndarray:
+    """Function to perform raw threshold segmentation, to move into 2D adaptive segmentation
+    :param ct_image: the raw ct image
     :return
     """
-    pass
+    im = ct_image.copy()
+    binary_im = get_binary_body(im) # jitted
+    body = get_largest_connected_component(binary_im)
+    new_im = remove_exterior_artifacts(ct_image, body)
+    bone_seg = threshold_image(new_im) # jitted
+    bone_seg = fill_bone_gaps(bone_seg)
+    return bone_seg
 
 
 def get_bones_set(filled_im: np.ndarray) -> set[tuple]:
@@ -127,7 +136,7 @@ def get_bones_set(filled_im: np.ndarray) -> set[tuple]:
     :param filled_im: the output of fill_bone_gaps
     :return: a set containing pixel tuples of bones
     """
-    bones = {tuple(bone) for bone in np.argwhere(filled_im == 1)}
+    bones = {tuple(pixel) for pixel in np.argwhere(filled_im == 1)}
     return bones
 
 
@@ -148,9 +157,10 @@ def get_planar_neighbors(bone: tuple, shape: tuple = (512, 512)) -> list:
     :param shape: the shape of the image
     :return: a list of valid indices to check
     """
+    # print(bone)
     y, x = bone
-    ymax, ymin = (shape[0], 0)
-    xmax, xmin = (shape[1], 0)
+    ymax, ymin = (shape[0] - 1, 0)
+    xmax, xmin = (shape[1] - 1, 0)
     neighbor_ixs = [
         [y + 1, x],
         [y - 1, x],
@@ -169,20 +179,6 @@ def get_planar_neighbors(bone: tuple, shape: tuple = (512, 512)) -> list:
     valid_indices = [ele for idx, ele in enumerate(neighbor_ixs) if idx not in drop_ixs]
     return valid_indices
 
-def get_3d_neighbors(bone: tuple) -> list:
-    """
-    A function to get the planar neighbors and 3d neighbors of a pixel
-    :param bone: a 3d pixel coordinate tuple from bones set
-    :return: a list of 3d neighbors
-    """
-    y, x, z = bone
-    neighbor_ixs = get_planar_neighbors((y, x))
-    neighbor_ixs = [[ix[0], ix[1], z] for ix in neighbor_ixs]
-    if z != 0:
-        neighbor_ixs.append([y, x, z - 1])
-    if z != 511:
-        neighbor_ixs.append([y, x, z + 1])
-    return neighbor_ixs
 
 def find_2d_boundaries(bones_set: set, filled_im: np.ndarray) -> set[tuple]:
     """
@@ -201,16 +197,6 @@ def find_2d_boundaries(bones_set: set, filled_im: np.ndarray) -> set[tuple]:
     return boundaries
 
 
-def find_3d_boundaries(bones_set: set, segmented_volume: np.ndarray) -> set[tuple]:
-    boundaries = set()
-    for bone in bones_set:
-        conditions = get_3d_neighbors(bone)
-        neighbors = np.array([segmented_volume[condition[0], condition[1], condition[2]] for condition in conditions])
-        if np.any(neighbors == 0):
-            boundaries.add(bone)
-    return boundaries
-
-
 def create_boundary_boxes(ct_image: np.ndarray, filled_im: np.ndarray, boundary_pixel: tuple, pixel_radius: int):
     """
     A function to create bounding boxes around the boundary pixels of interest
@@ -224,7 +210,7 @@ def create_boundary_boxes(ct_image: np.ndarray, filled_im: np.ndarray, boundary_
     win_ymin = by - pixel_radius
     win_ymax = by + pixel_radius + 1
     win_xmin = bx - pixel_radius
-    win_xmax = bx + pixel_radius
+    win_xmax = bx + pixel_radius + 1
 
     # Check if the window is out of bounds
     ymax, xmax = ct_image.shape[0] - 1, ct_image.shape[1] - 1
@@ -236,13 +222,13 @@ def create_boundary_boxes(ct_image: np.ndarray, filled_im: np.ndarray, boundary_
         win_ymin = 0
         pixel_loc[0] = by
     if win_ymax > ymax:
-        win_ymax = ymax
+        win_ymax = ymax + 1
         pixel_loc[0] = pixel_radius
     if win_xmin < 0:
         win_xmin = 0
         pixel_loc[1] = bx
     if win_xmax > xmax:
-        win_xmax = xmax
+        win_xmax = xmax + 1
         pixel_loc[1] = pixel_radius
 
     ct_bd_box = ct_image[win_ymin:win_ymax, win_xmin:win_xmax]
@@ -252,88 +238,6 @@ def create_boundary_boxes(ct_image: np.ndarray, filled_im: np.ndarray, boundary_
     return ct_bd_box, lbl_bd_box, tuple(pixel_loc)
 
 
-def create_3d_boundary_boxes(ct_volume: np.ndarray, seg_volume: np.ndarray, boundary_pixel: tuple,
-                             pixel_radius: int):
-    """
-    Create the 3d boundary box around the boundary pixel
-    :param ct_volume: the ct volume in hounsfield units
-    :param seg_volume: the volume containing the 2d segmented bones
-    :param boundary_pixel: the bone pixel coordinates [y, x, z]
-    :param pixel_radius: the radius of the bounding box
-    :return: the image and label bounding boxes, and the pixel location of the boundary pixel
-    """
-    by, bx, bz = boundary_pixel
-    win_ymin = by - pixel_radius
-    win_ymax = by + pixel_radius + 1
-    win_xmin = bx - pixel_radius
-    win_xmax = bx + pixel_radius
-    win_zmin = bz - 1
-    win_zmax = bz + 1
-    # Check if the window is out of bounds
-    ymax, xmax = ct_volume.shape[0] - 1, ct_volume.shape[1] - 1
-    pixel_loc = [pixel_radius, pixel_radius, 1]
-    if bz == 0:
-        pixel_loc[2] = 0
-    if bz == ct_volume.shape[2] - 1:
-        pixel_loc[2] = 2
-    if win_ymin < 0:
-        win_ymin = 0
-        pixel_loc[0] = by
-    if win_ymax > ymax:
-        win_ymax = ymax
-        pixel_loc[0] = pixel_radius
-    if win_xmin < 0:
-        win_xmin = 0
-        pixel_loc[1] = bx
-    if win_xmax > xmax:
-        win_xmax = xmax
-        pixel_loc[1] = pixel_radius
-
-    if bz == 0:
-        ct_bd_box = ct_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz:bz + 3]
-        lbl_bd_box = seg_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz:bz + 3]
-    elif bz == ct_volume.shape[2] - 1:
-        ct_bd_box = ct_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz - 2:]
-        lbl_bd_box = seg_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz - 2:]
-    else:
-        ct_bd_box = ct_volume[win_ymin:win_ymax, win_xmin:win_xmax, win_zmin:win_zmax]
-        lbl_bd_box = seg_volume[win_ymin:win_ymax, win_xmin:win_xmax, win_zmin:win_zmax]
-    return ct_bd_box, lbl_bd_box, tuple(pixel_loc)
-
-
-def adaptive_3d_threshold(ct_volume: np.ndarray, seg_volume: np.ndarray, bones: set, non_bones:set, boundaries: set, pixel_radius: int):
-    """
-    Adaptive thresholding for the 3d volume
-    :param ct_volume: the ct volume in hounsfield units
-    :param seg_volume: the volume containing the 2d segmented bones
-    :param bones: the set of bone labels
-    :param non_bones: the set of non-bone labels
-    :param boundaries: the set of boundary labels
-    :param pixel_radius: the radius of the bounding box
-    :return: a numpy array with the thresholded volume
-    """
-    new_segmentation = seg_volume.copy()
-    while True:
-        errors = set()
-        for boundary in boundaries:
-            ct_bd_box, lbl_bd_box, pixel_loc = create_3d_boundary_boxes(ct_volume, new_segmentation, boundary, pixel_radius)
-            reclassed = get_decision_array(ct_bd_box, lbl_bd_box)
-            if reclassed[pixel_loc[0], pixel_loc[1], pixel_loc[2]] != lbl_bd_box[pixel_loc[0], pixel_loc[1], pixel_loc[2]]:
-                errors.add(boundary)
-        if len(errors) == 0:
-            break
-        else:
-            print(len(errors))
-            bones = bones.difference(errors)
-            non_bones = non_bones.difference(errors)
-            new_segmentation = np.zeros(seg_volume.shape)
-            for bone in bones:
-                new_segmentation[bone[0], bone[1], bone[2]] = 1
-            boundaries = find_3d_boundaries(bones, new_segmentation)
-
-    return new_segmentation, bones, non_bones
-
-@njit(cache=True)
 def calculate_probability(arr, mean, var):
     """
     A function to calculate the Gaussian probability of a pixel belonging to a specific distribution
@@ -385,7 +289,7 @@ def get_decision_array(ct_bd_box: np.ndarray, lbl_bd_box: np.ndarray) -> np.ndar
     return bone_reclass
 
 
-def adaptive_2d_bone_thresholding(ct_image: np.ndarray, filled_im: np.ndarray, bones: set, non_bones: set,
+def adaptive_2d_bone_thresholding(ct_image: np.ndarray, filled_im: np.ndarray, bones: set,
                                   boundaries: set, px_radius: int) -> \
         tuple[ndarray, set[Any], set[Any]]:
     """
@@ -404,20 +308,132 @@ def adaptive_2d_bone_thresholding(ct_image: np.ndarray, filled_im: np.ndarray, b
         for boundary in boundaries:
             ct_bd_box, lbl_bd_box, pixel_loc = create_boundary_boxes(ct_image, new_labels, boundary, px_radius)
             reclassed = get_decision_array(ct_bd_box, lbl_bd_box)
+            # print(f'CT Shape = {ct_bd_box.shape}, LBL Shape = {lbl_bd_box.shape}, pixel_loc = {pixel_loc}')
             if reclassed[pixel_loc[0], pixel_loc[1]] != lbl_bd_box[pixel_loc[0], pixel_loc[1]]:
                 errors.add(boundary)
 
         if len(errors) == 0:
             break
         else:
-            print(len(errors))
+            # print(len(errors))
             bones = bones.difference(errors)
-            non_bones = non_bones.difference(errors)
+            # non_bones = non_bones.difference(errors)
             new_labels = np.zeros(filled_im.shape)
             for bone in bones:
                 new_labels[bone[0], bone[1]] = 1
             boundaries = find_2d_boundaries(bones, new_labels)
-    return new_labels, bones, non_bones
+    return new_labels, bones
+
+
+def get_3d_neighbors(bone: tuple) -> list:
+    """
+    A function to get the planar neighbors and 3d neighbors of a pixel
+    :param bone: a 3d pixel coordinate tuple from bones set
+    :return: a list of 3d neighbors
+    """
+    y, x, z = bone
+    neighbor_ixs = get_planar_neighbors((y, x))
+    neighbor_ixs = [[ix[0], ix[1], z] for ix in neighbor_ixs]
+    if z != 0:
+        neighbor_ixs.append([y, x, z - 1])
+    if z != 511:
+        neighbor_ixs.append([y, x, z + 1])
+    return neighbor_ixs
+
+
+def find_3d_boundaries(bones_set: set, segmented_volume: np.ndarray) -> set[tuple]:
+    boundaries = set()
+    for bone in bones_set:
+        conditions = get_3d_neighbors(bone)
+        neighbors = np.array([segmented_volume[condition[0], condition[1], condition[2]] for condition in conditions])
+        if np.any(neighbors == 0):
+            boundaries.add(bone)
+    return boundaries
+
+
+def create_3d_boundary_boxes(ct_volume: np.ndarray, seg_volume: np.ndarray, boundary_pixel: tuple,
+                             pixel_radius: int):
+    """
+    Create the 3d boundary box around the boundary pixel
+    :param ct_volume: the ct volume in hounsfield units
+    :param seg_volume: the volume containing the 2d segmented bones
+    :param boundary_pixel: the bone pixel coordinates [y, x, z]
+    :param pixel_radius: the radius of the bounding box
+    :return: the image and label bounding boxes, and the pixel location of the boundary pixel
+    """
+    by, bx, bz = boundary_pixel
+    win_ymin = by - pixel_radius
+    win_ymax = by + pixel_radius + 1
+    win_xmin = bx - pixel_radius
+    win_xmax = bx + pixel_radius
+    win_zmin = bz - 1
+    win_zmax = bz + 1
+    # Check if the window is out of bounds
+    ymax, xmax = ct_volume.shape[0] - 1, ct_volume.shape[1] - 1
+    pixel_loc = [pixel_radius, pixel_radius, 1]
+    if bz == 0:
+        pixel_loc[2] = 0
+    if bz == ct_volume.shape[2] - 1:
+        pixel_loc[2] = 2
+    if win_ymin < 0:
+        win_ymin = 0
+        pixel_loc[0] = by
+    if win_ymax > ymax:
+        win_ymax = ymax
+        pixel_loc[0] = pixel_radius
+    if win_xmin < 0:
+        win_xmin = 0
+        pixel_loc[1] = bx
+    if win_xmax > xmax:
+        win_xmax = xmax
+        pixel_loc[1] = pixel_radius
+
+    if bz == 0:
+        ct_bd_box = ct_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz:bz + 3]
+        lbl_bd_box = seg_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz:bz + 3]
+    elif bz == ct_volume.shape[2] - 1:
+        ct_bd_box = ct_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz - 2:]
+        lbl_bd_box = seg_volume[win_ymin:win_ymax, win_xmin:win_xmax, bz - 2:]
+    else:
+        ct_bd_box = ct_volume[win_ymin:win_ymax, win_xmin:win_xmax, win_zmin:win_zmax]
+        lbl_bd_box = seg_volume[win_ymin:win_ymax, win_xmin:win_xmax, win_zmin:win_zmax]
+    return ct_bd_box, lbl_bd_box, tuple(pixel_loc)
+
+
+def adaptive_3d_threshold(ct_volume: np.ndarray, seg_volume: np.ndarray, bones: set, non_bones: set, boundaries: set,
+                          pixel_radius: int):
+    """
+    Adaptive thresholding for the 3d volume
+    :param ct_volume: the ct volume in hounsfield units
+    :param seg_volume: the volume containing the 2d segmented bones
+    :param bones: the set of bone labels
+    :param non_bones: the set of non-bone labels
+    :param boundaries: the set of boundary labels
+    :param pixel_radius: the radius of the bounding box
+    :return: a numpy array with the thresholded volume
+    """
+    new_segmentation = seg_volume.copy()
+    while True:
+        errors = set()
+        for boundary in boundaries:
+            ct_bd_box, lbl_bd_box, pixel_loc = create_3d_boundary_boxes(ct_volume, new_segmentation, boundary,
+                                                                        pixel_radius)
+            reclassed = get_decision_array(ct_bd_box, lbl_bd_box)
+            if reclassed[pixel_loc[0], pixel_loc[1], pixel_loc[2]] != lbl_bd_box[
+                pixel_loc[0], pixel_loc[1], pixel_loc[2]]:
+                errors.add(boundary)
+        if len(errors) == 0:
+            break
+        else:
+            print(len(errors))
+            bones = bones.difference(errors)
+            non_bones = non_bones.difference(errors)
+            new_segmentation = np.zeros(seg_volume.shape)
+            for bone in bones:
+                new_segmentation[bone[0], bone[1], bone[2]] = 1
+            boundaries = find_3d_boundaries(bones, new_segmentation)
+
+    return new_segmentation, bones, non_bones
 
 
 # Waist measurement utilities
@@ -501,3 +517,4 @@ def select_waist_measurement(waist_df, max_ix, waist_range):
     waist_ix = waist[waist['n_bones'] == 3].index.max()
     waist_center = waist_df.loc[waist_ix, 'waist_circumference_cm']
     return waist_center, waist_ix
+
