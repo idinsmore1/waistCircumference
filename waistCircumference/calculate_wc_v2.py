@@ -47,7 +47,8 @@ def main():
 
     # Create a dataframe with the information
     bone_df = pd.DataFrame(bone_info).T
-    bone_df['rolling_bones'] = bone_df.bones.rolling(bone_df.shape[0] // 12, min_periods=bone_df.shape[0] // 12).mean().round(3)
+    bone_df['rolling_bones'] = bone_df.bones.rolling(bone_df.shape[0] // 12,
+                                                     min_periods=bone_df.shape[0] // 12).mean().round(3)
     # Go 1 cm above and 4.5 cm below the minimum value
     min_ix = np.int64(bone_df.rolling_bones.idxmin())
     thickness = ct.series_info['thickness']
@@ -63,12 +64,9 @@ def main():
         wcs.append(wc)
     possible_circs['waist_circ'] = wcs
     possible_circs.to_csv(f'{output_dir}/{output_file}')
-    min_slice_wc = np.int64(possible_circs.waist_circ.idxmin())
-    min_ix = np.int64(possible_circs.reset_index().waist_circ.idxmin())
-    print(possible_circs, min_slice_wc)
-    # print(possible_circs.query('slice_ix == @min_wc'))
-    possible_circs.iloc[[min_ix]].to_csv(f'{output_dir}/min_{output_file}')
-    plt.imsave(f'{output_dir}/min_ix_{output_file.replace(".csv", ".png")}', ct_images[min_slice_wc])
+    min_slice_wc = possible_circs.waist_circ.idxmin()
+    possible_circs.loc[[min_slice_wc]].to_csv(f'{output_dir}/min_{output_file}')
+    plt.imsave(f'{output_dir}/min_ix_{output_file.replace(".csv", ".png")}', ct_images[int(min_slice_wc)])
     return possible_circs
 
 
