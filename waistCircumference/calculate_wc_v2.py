@@ -21,7 +21,7 @@ def main():
     ct_images = ct.read_dicom_series('*', win_center=100, win_width=400)
     ct_images = np.moveaxis(ct_images, -1, 0)
     # Get the output file name
-    output_file = f'MRN{ct.mrn}_waist_circumference.csv'
+    output_file = f'MRN{ct.mrn}_waist_circumference'
     if args.output_dir[-1] == '/':
         args.output_dir = args.output_dir[:-1]
     output_dir = f'{args.output_dir}/MRN{ct.mrn}/'
@@ -63,11 +63,11 @@ def main():
         wc = ut.measure_circumference(wc, ct.series_info['width'])
         wcs.append(wc)
     possible_circs['waist_circ'] = wcs
-    possible_circs.to_csv(f'{output_dir}/{output_file}')
+    possible_circs.to_csv(f'{output_dir}/{output_file}.csv')
     min_slice_wc = possible_circs.waist_circ.idxmin()
-    possible_circs.loc[[min_slice_wc]].to_csv(f'{output_dir}/min_{output_file}')
-    plt.imsave(f'{output_dir}/min_ix_{output_file.replace(".csv", ".png")}', ct_images[int(min_slice_wc)])
-    return possible_circs
+    possible_circs.loc[[min_slice_wc]].to_csv(f'{output_dir}/{output_file}_min.csv')
+    plt.imsave(f'{output_dir}/{output_file}_min.png', ct_images[int(min_slice_wc)])
+
 
 
 if __name__ == '__main__':
