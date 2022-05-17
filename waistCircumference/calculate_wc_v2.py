@@ -54,7 +54,7 @@ def main():
     thickness = ct.series_info['thickness']
     slices_up = np.ceil(1 / thickness).astype(int)
     slices_down = np.ceil(4.5 / thickness).astype(int) + 1
-    possible_circs = bone_df.iloc[(min_ix - slices_up):(min_ix + slices_down), :]
+    possible_circs = bone_df.iloc[(min_ix - slices_up):(min_ix + slices_down), :].copy()
     wcs = []
     for ix in possible_circs.index:
         ix = int(ix)
@@ -62,12 +62,16 @@ def main():
         wc = ut.fill_binary_gaps(wc)
         wc = ut.measure_circumference(wc, ct.series_info['width'])
         wcs.append(wc)
-    possible_circs['waist_circ'] = wcs
+    possible_circs['waist_circ'] = np.asarray(wcs)
     possible_circs.to_csv(f'{output_dir}/{output_file}.csv')
     min_slice_wc = possible_circs.waist_circ.idxmin()
-    possible_circs.loc[[min_slice_wc]].to_csv(f'{output_dir}/{output_file}_min.csv')
+    outfile = possible_circs.loc[[min_slice_wc]]
+    outfile.insert(0, 'MRN', ct.mrn)
+    outfile.insert(1, 'cut', ct.series_info['cut'])
+    # outfile.insert(2, 'sex', ct.series_info['sex'])
+    outfile.insert(2, 'scan_date', ct.series_info['scan_date'])
+    outfile.to_csv(f'{output_dir}/{output_file}_min.csv')
     plt.imsave(f'{output_dir}/{output_file}_min.png', ct_images[int(min_slice_wc)])
-
 
 
 if __name__ == '__main__':
