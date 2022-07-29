@@ -517,4 +517,3 @@ def select_waist_measurement(waist_df, max_ix, waist_range):
     waist_ix = waist[waist['n_bones'] == 3].index.max()
     waist_center = waist_df.loc[waist_ix, 'waist_circumference_cm']
     return waist_center, waist_ix
-
